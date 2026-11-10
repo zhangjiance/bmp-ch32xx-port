@@ -45,3 +45,21 @@ void boot_usb_port_deinit(void)
     for (volatile uint32_t settle = 0U; settle < 200000U; ++settle) {
     }
 }
+
+/*
+ * Vector entry.
+ *
+ * CherryUSB's WCH usbfs driver installs its interrupt body as
+ * usbd_wch_usbfs_irq_handler() and expects the port to provide the real vector
+ * (ch32fun's table names it USBFS_IRQHandler).  Without this shim the vector
+ * still resolves - to ch32fun's weak default - so the controller raises
+ * interrupts that nobody services: the device never answers the host and does
+ * not enumerate at all.
+ */
+void USBD_IRQHandler(uint8_t busid);
+
+void USBFS_IRQHandler(void) INTERRUPT_DECORATOR;
+void USBFS_IRQHandler(void)
+{
+    USBD_IRQHandler(0);
+}
