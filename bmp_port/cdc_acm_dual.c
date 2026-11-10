@@ -25,7 +25,8 @@
 #include "usbd_cdc_acm.h"
 #include "usb_config.h"
 
-#include "ch32fun.h" /* NVIC_DisableIRQ()/USBHS_IRQn for the GDB pipe locking */
+#include "ch32fun.h"
+#include "boot_usb_port.h" /* NVIC_DisableIRQ()/USBHS_IRQn for the GDB pipe locking */
 
 #include "board.h"
 #include "general.h" /* platform_support.h requires this to be included first */
@@ -378,12 +379,12 @@ static const struct usb_msosv1_descriptor msosv1 = {
  * ------------------------------------------------------------------ */
 static inline void gdb_usb_enter(void)
 {
-    NVIC_DisableIRQ(USBHS_IRQn);
+    NVIC_DisableIRQ(USB_PORT_IRQn);
 }
 
 static inline void gdb_usb_exit(void)
 {
-    NVIC_EnableIRQ(USBHS_IRQn);
+    NVIC_EnableIRQ(USB_PORT_IRQn);
 }
 
 static void gdb_out_arm(void)

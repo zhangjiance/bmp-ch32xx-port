@@ -62,18 +62,35 @@ __STATIC_FORCEINLINE void PIN_GPIO_MODE(GPIO_TypeDef *const port, const uint16_t
 /* Configure the SWD/JTAG pins (PB12/PB13/PB14/PB15) as outputs, idle high. */
 void jtag_port_init(void);
 
-/* ---------------- pin assignment ---------------- */
+/* ---------------- pin assignment ----------------
+ * The board owns the wiring: a board that declares BOARD_JTAG_* pins in
+ * board_config.h wins, otherwise the CH32V30x board's PB12..PB15 mapping is
+ * used.  All four pins must be on one port - the combined clock-edge helpers
+ * below move TCK, TMS and TDI with a single BSHR store.
+ */
+#include "board_config.h"
+
+#ifdef BOARD_JTAG_TCK_GPIO
+#define PIN_TCK_GPIO_PORT BOARD_JTAG_TCK_GPIO
+#define PIN_TCK_GPIO_PIN  BOARD_JTAG_TCK_PIN
+#define PIN_TMS_GPIO_PORT BOARD_JTAG_TMS_GPIO
+#define PIN_TMS_GPIO_PIN  BOARD_JTAG_TMS_PIN
+#define PIN_TDI_GPIO_PORT BOARD_JTAG_TDI_GPIO
+#define PIN_TDI_GPIO_PIN  BOARD_JTAG_TDI_PIN
+#define PIN_TDO_GPIO_PORT BOARD_JTAG_TDO_GPIO
+#define PIN_TDO_GPIO_PIN  BOARD_JTAG_TDO_PIN
+#define PIN_JTAG_GPIO_RCC BOARD_JTAG_GPIO_RCC
+#else
 #define PIN_TCK_GPIO_PORT GPIOB
 #define PIN_TCK_GPIO_PIN  GPIO_Pin_14
-
 #define PIN_TMS_GPIO_PORT GPIOB
 #define PIN_TMS_GPIO_PIN  GPIO_Pin_15
-
 #define PIN_TDI_GPIO_PORT GPIOB
 #define PIN_TDI_GPIO_PIN  GPIO_Pin_13
-
 #define PIN_TDO_GPIO_PORT GPIOB
 #define PIN_TDO_GPIO_PIN  GPIO_Pin_12
+#define PIN_JTAG_GPIO_RCC RCC_APB2Periph_GPIOB
+#endif
 
 /* ---------------- TCK / SWCLK ---------------- */
 __STATIC_FORCEINLINE void PIN_SWCLK_TCK_SET(void)

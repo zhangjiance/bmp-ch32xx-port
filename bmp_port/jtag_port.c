@@ -11,7 +11,7 @@
 
 void jtag_port_init(void)
 {
-    RCC->APB2PCENR |= RCC_APB2Periph_GPIOB;
+    RCC->APB2PCENR |= PIN_JTAG_GPIO_RCC;
 
     /*
      * SWDIO/TMS: push pull and idle high.

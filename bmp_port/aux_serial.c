@@ -28,6 +28,7 @@
 
 #include "board.h" /* BOARD_APP_UART*: the USB2UART hardware */
 #include "ch32fun.h"
+#include "boot_usb_port.h"
 
 #if !BOARD_HAS_APP_UART
 #error "aux_serial needs an application UART: the board must provide BOARD_APP_UART*"
@@ -227,12 +228,12 @@ uint32_t aux_serial_write(const uint8_t *src, uint32_t len)
      * USBHS interrupt, so the update is protected against it.  The tail is only
      * ever moved by the DMA interrupt, which this section still allows.
      */
-    NVIC_DisableIRQ(USBHS_IRQn);
+    NVIC_DisableIRQ(USB_PORT_IRQn);
     while ((queued < len) && (((tx_head + 1U) & AUX_TX_BUF_MASK) != tx_tail)) {
         tx_buf[tx_head] = src[queued++];
         tx_head = (uint16_t)((tx_head + 1U) & AUX_TX_BUF_MASK);
     }
-    NVIC_EnableIRQ(USBHS_IRQn);
+    NVIC_EnableIRQ(USB_PORT_IRQn);
 
     aux_tx_kick();
     return queued;

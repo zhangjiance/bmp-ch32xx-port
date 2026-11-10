@@ -26,3 +26,14 @@ add_compile_definitions(
     FUNCONF_PLL_MULTIPLIER=6
     FUNCONF_SYSTEM_CORE_CLOCK=144000000
 )
+
+# ------------------------------------------------------------------------------
+# Chip port selection
+#
+# bmp_port/CMakeLists.txt picks the boot_*, *_it.c and CherryUSB controller
+# sources from these variables.  This board runs the CH32V305/307 USBHS block in
+# high speed, which is what CONFIG_USB_HS and BMP's own USB_HS switch select.
+# ------------------------------------------------------------------------------
+set(BOARD_CHIP "ch32v30x")
+set(BOARD_USB_HS ON)
+add_compile_definitions(CONFIG_USB_HS)

@@ -63,6 +63,26 @@
                 "BMP_SLIM": "ON"
             },
             "binaryDir": "${sourceDir}/build/ch32v30x_ob-slim-debug"
+        },
+        {
+            "name": "ch32l103_ob-slim-release",
+            "displayName": "CH32L103 OB - slim (RISC-V/HPM targets only, Release)",
+            "inherits": "base",
+            "cacheVariables": {
+                "BOARD": "ch32l103_ob",
+                "BMP_SLIM": "ON"
+            },
+            "binaryDir": "${sourceDir}/build/ch32l103_ob-slim-release"
+        },
+        {
+            "name": "ch32l103_ob-slim-debug",
+            "displayName": "CH32L103 OB - slim (RISC-V/HPM targets only, Debug)",
+            "inherits": "base-debug",
+            "cacheVariables": {
+                "BOARD": "ch32l103_ob",
+                "BMP_SLIM": "ON"
+            },
+            "binaryDir": "${sourceDir}/build/ch32l103_ob-slim-debug"
         }
     ],
     "buildPresets": [
@@ -84,6 +104,16 @@
         {
             "name": "ch32v30x_ob-slim-debug",
             "configurePreset": "ch32v30x_ob-slim-debug",
+            "jobs": 8
+        },
+        {
+            "name": "ch32l103_ob-slim-release",
+            "configurePreset": "ch32l103_ob-slim-release",
+            "jobs": 8
+        },
+        {
+            "name": "ch32l103_ob-slim-debug",
+            "configurePreset": "ch32l103_ob-slim-debug",
             "jobs": 8
         }
     ]

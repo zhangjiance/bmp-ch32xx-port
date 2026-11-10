@@ -29,8 +29,9 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
-# The CH32V305/307 USBHS block runs in high speed.
-add_compile_definitions(-DCONFIG_USB_HS)
+# The USB controller of the selected chip (and whether it runs high speed) is a
+# board property: boards/<board>/board.cmake sets CONFIG_USB_HS for the V30x
+# USBHS boards and leaves it off for the L103's full-speed USBFS.
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
@@ -145,7 +146,12 @@ project(${CMAKE_PROJECT_NAME})
 set(PROJECT_TARGET ${CMAKE_PROJECT_NAME}.elf)
 # ch32fun's vector table lives in .init and the entry point is InterruptVector,
 # so this script has no .vector output section.
-set(LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/linkfile/flash_dfu.ld)
+# The board may point at its own script (a 64 KB part needs a smaller
+# application region than the 128 KB V30x board).
+if(NOT DEFINED BOARD_LINKER_SCRIPT)
+    set(BOARD_LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/linkfile/flash_dfu.ld)
+endif()
+set(LINKER_SCRIPT ${BOARD_LINKER_SCRIPT})
 
 add_link_options(
     -T ${LINKER_SCRIPT}

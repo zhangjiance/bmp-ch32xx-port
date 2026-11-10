@@ -7,6 +7,7 @@
 #include "stdio.h"
 #include "ch32fun.h"
 #include "board.h"
+#include "boot_usb_port.h"
 #include "usb_config.h"
 
 #include "general.h"
@@ -90,7 +91,7 @@ int main(void)
     board_init();
     /* Probe-owned SWD/JTAG pins; the board layer does not know about them. */
     jtag_port_init();
-    cdc_acm_init(0, (uint32_t)USBHS_BASE);
+    cdc_acm_init(0, (uint32_t)USB_PORT_BASE);
 
     platform_init();
 

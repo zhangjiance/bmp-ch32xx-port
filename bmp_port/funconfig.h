@@ -15,7 +15,11 @@
 #ifndef _FUNCONFIG_H
 #define _FUNCONFIG_H
 
+#if defined(CH32L103)
+/* selected by boards/ch32l103_ob/board.cmake */
+#else
 #define CH32V30x 1
+#endif
 
 /* ------------------------------------------------------------------ *
  * Clock tree

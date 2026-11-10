@@ -70,6 +70,22 @@ set(BMP_CORE_ROOT  "${BMP_ROOT}/src")
 #
 # ch32fun.c brings the startup, clock tree, vector table and core intrinsics.
 # ------------------------------------------------------------------------------
+# Chip port selection, set by boards/<board>/board.cmake:
+#   ch32v30x -> USBHS controller from our CherryUSB fork, high speed
+#   ch32l103 -> USBFS controller from CherryUSB's own WCH usbfs port, full speed
+if(NOT DEFINED BOARD_CHIP)
+    set(BOARD_CHIP ch32v30x)
+    set(BOARD_USB_HS ON)
+endif()
+
+if(BOARD_CHIP STREQUAL "ch32l103")
+    set(_usb_dc_src ${CHERRYUSB_ROOT}/port/wch/usbfs/usb_dc_usbfs.c)
+    set(_usb_dc_inc ${CHERRYUSB_ROOT}/port/wch/usbfs)
+else()
+    set(_usb_dc_src ${CHERRYUSB_ROOT}/port/wch/ch32v30x/usb_dc_ch32v30x.c)
+    set(_usb_dc_inc ${CHERRYUSB_ROOT}/port/wch/ch32v30x)
+endif()
+
 set(bmp_port_srcs
     # platform: LED, boot hand-shake, target clock output control
     ${BMP_PORT_DIR}/platform.c
@@ -80,12 +96,12 @@ set(bmp_port_srcs
     # USB: composite CDC ACM (GDB server + target UART) and the target UART
     ${BMP_PORT_DIR}/cdc_acm_dual.c
     ${BMP_PORT_DIR}/aux_serial.c
-    ${CHERRYUSB_ROOT}/port/wch/ch32v30x/usb_dc_ch32v30x.c
+    ${_usb_dc_src}
     # bootloader integration: BKP hand-shake and reset into the bootloader
-    ${BMP_PORT_DIR}/boot_trigger_ch32v30x.c
-    ${BMP_PORT_DIR}/boot_usb_ch32v30x.c
+    ${BMP_PORT_DIR}/boot_trigger_${BOARD_CHIP}.c
+    ${BMP_PORT_DIR}/boot_usb_${BOARD_CHIP}.c
     # exception handlers
-    ${BMP_PORT_DIR}/ch32v30x_it.c
+    ${BMP_PORT_DIR}/${BOARD_CHIP}_it.c
     # startup, clock tree, vector table and core intrinsics
     ${CH32FUN_ROOT}/ch32fun/ch32fun.c
 )
@@ -212,7 +228,7 @@ target_sources(${PROJECT_TARGET} PRIVATE
 
 target_include_directories(${PROJECT_TARGET} PRIVATE
     ${cherryusb_incs}
-    ${CHERRYUSB_ROOT}/port/wch/ch32v30x
+    ${_usb_dc_inc}
     ${blackmagic_incs}
     ${BMP_PORT_DIR}
     ${PROJECT_ROOT}/shared
@@ -224,11 +240,14 @@ target_include_directories(${PROJECT_TARGET} PRIVATE ${CH32FUN_ROOT}/ch32fun)
 # Black magic debug configuration: no libopencm3 (CherryUSB provides USB), no
 # RTT, 4 byte pointers (rv32), accelerated RISC-V access and no interrupt
 # preemption so the bit-banged SWD/JTAG timing stays deterministic.
+if(BOARD_USB_HS)
+    target_compile_definitions(${PROJECT_TARGET} PRIVATE -DUSB_HS)
+endif()
+
 target_compile_definitions(${PROJECT_TARGET} PRIVATE
     -DCONFIG_BMDA=0
     -DCONFIG_POINTER_SIZE=4
     -DNO_LIBOPENCM3
-    -DUSB_HS
     -DADVERTISE_NOACKMODE=1
     -DCONFIG_RISCV=1
     -DCONFIG_RISCV_ACCEL=1
