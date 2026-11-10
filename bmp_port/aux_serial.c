@@ -1,9 +1,9 @@
 /*
  * aux_serial_ch32fun.c
  *
- * Target UART for the CH32V30x BMP port, register level: the board's
+ * Target UART for the CH32xx BMP port, register level: the board's
  * application UART (BOARD_APP_UART*, see
- * boards/ch32v30x_ob/board_config.h), the physical side of the second CDC
+ * boards/<board>/board_config.h), the physical side of the second CDC
  * function.  The board layer owns the hardware - instance, pins and clocks,
  * all through board_init_app_uart() - while this file owns the line format and
  * the DMA data path on top of it.
@@ -12,15 +12,18 @@
  * main loop, which is normally parked inside gdb_if_getchar() waiting for a GDB
  * command:
  *
- *   target -> host   USART3 RX -> DMA1 channel 3, writing rx_buf in a circle.
- *                    The USART IDLE interrupt and the DMA half/full transfer
- *                    interrupts forward whatever arrived straight to the USB
- *                    endpoint through the registered sink, and the endpoint's
- *                    completion callback (aux_serial_usb_ready()) continues
- *                    with the rest.
- *   host -> target   the USB OUT callback queues into tx_buf; DMA1 channel 2
+ *   target -> host   the UART RX stream goes to the RX DMA channel, writing
+ *                    rx_buf in a circle.  The USART IDLE interrupt and the DMA
+ *                    half/full transfer interrupts forward whatever arrived
+ *                    straight to the USB endpoint through the registered sink,
+ *                    and the endpoint's completion callback
+ *                    (aux_serial_usb_ready()) continues with the rest.
+ *   host -> target   the USB OUT callback queues into tx_buf; the TX DMA channel
  *                    sends one contiguous run at a time and its transfer
  *                    complete interrupt picks up the next one.
+ *
+ * The DMA channels are fixed by the chip (see the mapping below), which is why
+ * this file, unlike the board layer, cannot be instance agnostic.
  *
  * Both directions therefore keep flowing while a GDB command is in progress.
  */
@@ -48,13 +51,29 @@
 #define AUX_PCLK1 (FUNCONF_SYSTEM_CORE_CLOCK / 2U)
 
 /*
- * CH32V30x DMA1 request mapping: USART3_TX is channel 2, USART3_RX is
- * channel 3 (the same fixed mapping STM32F1 uses).
+ * DMA1 request mapping and the USART interrupt name follow the chip (the same
+ * fixed mapping STM32F1 uses):
+ *
+ *   CH32V30x  USART3_TX -> channel 2, USART3_RX -> channel 3
+ *   CH32L103  USART1_TX -> channel 4, USART1_RX -> channel 5
  */
-#define AUX_TX_DMA        DMA1_Channel2
-#define AUX_TX_DMA_IRQn   DMA1_Channel2_IRQn
-#define AUX_RX_DMA        DMA1_Channel3
-#define AUX_RX_DMA_IRQn   DMA1_Channel3_IRQn
+#if defined(CH32L103) && CH32L103
+#define AUX_UART_IRQ_HANDLER   USART1_IRQHandler
+#define AUX_TX_DMA             DMA1_Channel4
+#define AUX_TX_DMA_IRQn        DMA1_Channel4_IRQn
+#define AUX_TX_DMA_IRQ_HANDLER DMA1_Channel4_IRQHandler
+#define AUX_RX_DMA             DMA1_Channel5
+#define AUX_RX_DMA_IRQn        DMA1_Channel5_IRQn
+#define AUX_RX_DMA_IRQ_HANDLER DMA1_Channel5_IRQHandler
+#else
+#define AUX_UART_IRQ_HANDLER   USART3_IRQHandler
+#define AUX_TX_DMA             DMA1_Channel2
+#define AUX_TX_DMA_IRQn        DMA1_Channel2_IRQn
+#define AUX_TX_DMA_IRQ_HANDLER DMA1_Channel2_IRQHandler
+#define AUX_RX_DMA             DMA1_Channel3
+#define AUX_RX_DMA_IRQn        DMA1_Channel3_IRQn
+#define AUX_RX_DMA_IRQ_HANDLER DMA1_Channel3_IRQHandler
+#endif
 
 /* DMA CFGR bits used below (same layout as the WCH library defines). */
 #define AUX_DMA_CFGR_EN      0x0001U
@@ -66,9 +85,14 @@
 #define AUX_DMA_CFGR_MINC    0x0080U
 #define AUX_DMA_CFGR_PL_HIGH 0x2000U
 
-/* DMA1->INTFR flags, per channel (GIF/TCIF/HTIF/TEIF). */
+/* DMA1->INTFR flags: the global flag of a channel sits at bit 4 * channel. */
+#if defined(CH32L103) && CH32L103
+#define AUX_TX_DMA_FLAGS (0x1U << 20) /* GL4 */
+#define AUX_RX_DMA_FLAGS (0x1U << 24) /* GL5 */
+#else
 #define AUX_TX_DMA_FLAGS (0x1U << 4)  /* GL2 */
 #define AUX_RX_DMA_FLAGS (0x1U << 8)  /* GL3 */
+#endif
 
 /* Circular DMA destination, must be a power of two. */
 #define AUX_RX_BUF_SIZE 256U
@@ -89,7 +113,7 @@ static volatile uint16_t rx_tail;
 static uint8_t tx_buf[AUX_TX_BUF_SIZE];
 static volatile uint16_t tx_head;
 static volatile uint16_t tx_tail;
-/* Length of the run DMA1 channel 2 is currently sending. */
+/* Length of the run the TX DMA channel is currently sending. */
 static volatile uint16_t tx_run;
 static volatile bool tx_busy;
 
@@ -150,8 +174,8 @@ void aux_serial_usb_ready(void)
     aux_serial_forward();
 }
 
-void USART3_IRQHandler(void) INTERRUPT_DECORATOR;
-void USART3_IRQHandler(void)
+void AUX_UART_IRQ_HANDLER(void) INTERRUPT_DECORATOR;
+void AUX_UART_IRQ_HANDLER(void)
 {
     if ((AUX_UART->STATR & USART_STATR_IDLE) == 0U) {
         return;
@@ -165,8 +189,8 @@ void USART3_IRQHandler(void)
     aux_serial_forward();
 }
 
-void DMA1_Channel3_IRQHandler(void) INTERRUPT_DECORATOR;
-void DMA1_Channel3_IRQHandler(void)
+void AUX_RX_DMA_IRQ_HANDLER(void) INTERRUPT_DECORATOR;
+void AUX_RX_DMA_IRQ_HANDLER(void)
 {
     /* Clears the global (half transfer + transfer complete) flags together. */
     DMA1->INTFR = AUX_RX_DMA_FLAGS;
@@ -203,8 +227,8 @@ static void aux_tx_kick(void)
     NVIC_EnableIRQ(AUX_TX_DMA_IRQn);
 }
 
-void DMA1_Channel2_IRQHandler(void) INTERRUPT_DECORATOR;
-void DMA1_Channel2_IRQHandler(void)
+void AUX_TX_DMA_IRQ_HANDLER(void) INTERRUPT_DECORATOR;
+void AUX_TX_DMA_IRQ_HANDLER(void)
 {
     AUX_TX_DMA->CFGR &= ~AUX_DMA_CFGR_EN;
     DMA1->INTFR = AUX_TX_DMA_FLAGS;
@@ -225,7 +249,7 @@ uint32_t aux_serial_write(const uint8_t *src, uint32_t len)
 
     /*
      * The head is also advanced by the USB OUT callback, which runs in the
-     * USBHS interrupt, so the update is protected against it.  The tail is only
+     * USB interrupt, so the update is protected against it.  The tail is only
      * ever moved by the DMA interrupt, which this section still allows.
      */
     NVIC_DisableIRQ(USB_PORT_IRQn);
