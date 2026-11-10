@@ -119,7 +119,7 @@ return result != 0;                               /* 低电平：12+ 周期，�
 
 ```
 /opt/Toolchain/RISC-V_Embedded_GCC12/bin/riscv-wch-elf-objdump -d \
-  build/ch32v30x_ob-release/CMakeFiles/bmp-ch32v30x-port.elf.dir/bmp_port/jtagtap.c.obj
+  build/ch32v30x_ob-release/CMakeFiles/bmp-ch32v30x_ob.elf.dir/bmp_port/jtagtap.c.obj
 ```
 
 数"拉低 TCK 的 store"到"拉高 TCK 的 store"之间的指令数，以及从后者到下一个下降沿之间的

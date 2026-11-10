@@ -1,16 +1,16 @@
-# bmp-ch32v30x-port
+# bmp-ch32xx-port
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Black Magic Probe (BMP) ported to the CH32V30x, driving its high-speed USB
-device controller (USBHS). The firmware is built as the **application image** of
-a DFU bootloader: the bootloader owns the first 12 KB of flash and this
-application starts at `0x08003000`.
+Black Magic Probe (BMP) ported to the CH32xx family: **CH32V30x** (high-speed USBHS)
+and **CH32L103** (full-speed USBFS). Both are built as the **application image** of a
+DFU bootloader: the bootloader owns the first 12 KB of flash and the probe starts at
+`0x08003000`.
 
 ```
 CMakeLists.txt            top level: toolchain, board selection, link, objcopy
 main.c                    application entry point
-CMakePresets.json         release / debug presets
+CMakePresets.json         per-board release / debug presets
 bmp_port/                 port layer: USB, bit-banged SWD/JTAG, target UART,
                           timing, bootloader handshake, MCU glue
 bmp_port/CMakeLists.txt   port sources + blackmagic sources and includes
@@ -19,13 +19,35 @@ third_party_components/
   blackmagic/             submodule: BMP core and target drivers
   CherryUSB/              submodule: USB stack + CH32V30x USBHS port
   ch32fun/                submodule: startup, clock tree, vectors, registers
-boards/ch32v30x_ob/      board BSP
-linkfile/flash_dfu.ld     application linker script (0x00003000, 116K)
+boards/ch32v30x_ob/       board BSP: CH32V30x, external crystal, USBHS
+boards/ch32l103_ob/       board BSP: CH32L103, HSI only, USBFS
+linkfile/flash_dfu.ld           application linker script, 116K (V30x)
+linkfile/flash_dfu_ch32l103.ld  application linker script, 52K (L103)
 shared/boot_protocol.h    bootloader/application contract (partition, BKP)
 docs/                     development notes (problem records, design notes)
 ```
 
+## Boards
+
+| Board | MCU / clock | USB device | Application region |
+|---|---|---|---|
+| `ch32v30x_ob` | CH32V305/307, 24 MHz crystal, 144 MHz sysclk | USBHS, high speed | 116 KB at `0x08003000` |
+| `ch32l103_ob` | CH32L103K8U6 (onboard probe of the HPM5151 EVK), internal oscillator, 96 MHz sysclk | USBFS, full speed | 52 KB at `0x08003000` |
+
+The chip-specific pieces are selected by `boards/<board>/board.cmake`
+(`BOARD_CHIP` = `ch32v30x` / `ch32l103`, `BOARD_USB_HS`, linker script); everything
+above that - the composite USB descriptors, the target UART data path, the
+bootloader handshake - is shared.
+
+The L103 parts are 64 KB / 20 KB, so 52 KB of application flash is not enough for
+the full multi-architecture probe (~88 KB): that board is built with
+`-DBMP_SLIM=ON` (RISC-V/HPM targets only, ARM/ADIv5/SPI dropped), which is what the
+`ch32l103_ob-slim-*` presets do. The V30x also has `-slim-` presets for the smaller
+image.
+
 ## Pins
+
+`ch32v30x_ob`:
 
 | Function | Pin |
 |---|---|
@@ -38,10 +60,23 @@ docs/                     development notes (problem records, design notes)
 | Target UART TX (USART3) | PB10 |
 | Target UART RX (USART3) | PB11 |
 
-nTRST / nSRST are not wired (empty implementations). The SWD/JTAG pin definitions
-live in `bmp_port/jtag_port.h`; the status LED and BOOT button are board pins
-(`BOARD_LED_*` / `BOARD_BOOT_*` in `boards/ch32v30x_ob/board_config.h`) reached
-through the board primitives `board_led_write()` / `board_read_boot_pin()`.
+`ch32l103_ob`:
+
+| Function | Pin |
+|---|---|
+| SWCLK / TCK | PA6 |
+| SWDIO / TMS | PA7 |
+| TDI | PA5 |
+| TDO | PA4 |
+| Status LED (red of the RGB trio, active low) | PB8 |
+| BOOT button (to GND, active low) | PA0 |
+| Console UART TX (USART1) | PA9 |
+| Console UART RX (USART1) | PA10 |
+
+nTRST / nSRST are not wired on either board (empty implementations). The SWD/JTAG
+pin definitions live in `bmp_port/jtag_port.h`; the status LED and BOOT button are
+board pins (`BOARD_LED_*` / `BOARD_BOOT_*` in `boards/<board>/board_config.h`)
+reached through the board primitives `board_led_write()` / `board_read_boot_pin()`.
 
 SWD/JTAG is **GPIO bit-banging only** (the `PIN_*` macros in
 `bmp_port/jtag_port.h`); there is no SPI acceleration path, so the timing stays
@@ -49,10 +84,13 @@ fully deterministic.
 
 ## USB device (composite, 1a86:6018)
 
+Same descriptors on both boards; only the underlying controller differs (USBHS on
+the V30x, USBFS on the L103).
+
 | Interface | Function |
 |---|---|
 | 0 / 1 | GDB server (CDC ACM) |
-| 2 / 3 | target UART (CDC ACM, USART3) |
+| 2 / 3 | target UART (CDC ACM) |
 | 4 | DFU runtime (no endpoints) |
 
 - **The DFU runtime interface (4) announces itself through Microsoft OS 1.0
@@ -78,20 +116,21 @@ fully deterministic.
 
 ## Target UART (USB2UART)
 
-The second CDC function (interfaces 2/3) is wired to USART3 (PB10/PB11). The UART
-*hardware* is described by the board, not the port: instance, pins and clocks are
-the `BOARD_APP_UART*` macros in `boards/ch32v30x_ob/board_config.h`, brought up by
+The second CDC function (interfaces 2/3) is wired to the board's application UART:
+USART3 (PB10/PB11) on the V30x, USART1 (PA9/PA10) on the L103. The UART *hardware*
+is described by the board, not the port: instance, pins and clocks are the
+`BOARD_APP_UART*` macros in `boards/<board>/board_config.h`, brought up by
 `board_init_app_uart()`. The port owns the line format and everything above the
 wire. The whole path is **DMA + interrupt driven** and never depends on the main
 loop:
 
-- **target → host**: USART3 RX is written into a 256 byte buffer in a circle by DMA1
-  channel 3; the USART **idle interrupt** and the DMA half/full transfer interrupts
-  hand whatever arrived straight to the IN endpoint through a USB sink, and the
-  endpoint's completion callback (`aux_serial_usb_ready()`) continues with the rest.
-- **host → target**: the USB OUT callback queues into a 1 KB ring and DMA1 channel 2
-  sends one contiguous run at a time, its transfer complete interrupt picking up the
-  next one.
+- **target → host**: the UART RX stream is written into a 256 byte buffer in a
+  circle by DMA; the UART **idle interrupt** and the DMA half/full transfer
+  interrupts hand whatever arrived straight to the IN endpoint through a USB sink,
+  and the endpoint's completion callback (`aux_serial_usb_ready()`) continues with
+  the rest.
+- **host → target**: the USB OUT callback queues into a 1 KB ring and DMA sends one
+  contiguous run at a time, its transfer complete interrupt picking up the next one.
 - **No DTR gating**: data is forwarded as long as the host is reading, so terminals
   that never assert DTR work too.
 - The UART therefore keeps flowing while a long GDB command is in progress; the old
@@ -99,25 +138,34 @@ loop:
 
 ## Bootloader integration
 
-- The application links at `0x00003000` (`linkfile/flash_dfu.ld`, 116 KB), matching
+- The application links at `0x00003000` (`linkfile/flash_dfu.ld`, 116 KB for the
+  V30x; `linkfile/flash_dfu_ch32l103.ld`, 52 KB for the L103), matching
   `BOOT_APP_OFFSET` in `shared/boot_protocol.h`.
 - Three paths return to the bootloader, all going through the BKP handshake in
-  `bmp_port/boot_trigger_ch32v30x.c` (it survives `NVIC_SystemReset()`):
+  `bmp_port/boot_trigger_<chip>.c` (it survives `NVIC_SystemReset()`):
   - `dfu-util -e` (DFU_DETACH) calls `platform_request_boot()`
   - `monitor bootloader` from the GDB side
-  - holding the BOOT button (PA6): the probe registers a 100 ms tick through
-    `board_timer_create()` (`bmp_port/platform.c`), which the board's TIM3
-    interrupt calls, so it works while the main loop is parked in
-    `gdb_if_getchar()` waiting for a GDB command
+  - holding the BOOT button: the probe registers a 100 ms tick through
+    `board_timer_create()` (`bmp_port/platform.c`), which a board timer interrupt
+    calls, so it works while the main loop is parked in `gdb_if_getchar()` waiting
+    for a GDB command
 
 ## Build
 
 ```sh
+# CH32V30x (full image)
 cmake --preset ch32v30x_ob-release
 cmake --build --preset ch32v30x_ob-release
+
+# CH32L103 (slim image, required for the 52 KB partition)
+cmake --preset ch32l103_ob-slim-release
+cmake --build --preset ch32l103_ob-slim-release
 ```
 
-Artifacts: `build/ch32v30x_ob-release/bmp-ch32v30x-port.{elf,hex,bin}`.
+Artifacts are named after the board, so a build directory never mixes them up:
+
+- `build/ch32v30x_ob-release/bmp-ch32v30x_ob.{elf,hex,bin}`
+- `build/ch32l103_ob-slim-release/bmp-ch32l103_ob.{elf,hex,bin}`
 
 ## Flashing / usage
 
@@ -128,7 +176,10 @@ Artifacts: `build/ch32v30x_ob-release/bmp-ch32v30x-port.{elf,hex,bin}`.
    firmware the device is running first:
 
    ```sh
-   dfu-util -d 1a86 -s 0x08003000:leave -D build/ch32v30x_ob-release/bmp-ch32v30x-port.bin
+   # CH32V30x
+   dfu-util -d 1a86 -s 0x08003000:leave -D build/ch32v30x_ob-release/bmp-ch32v30x_ob.bin
+   # CH32L103
+   dfu-util -d 1a86 -s 0x08003000:leave -D build/ch32l103_ob-slim-release/bmp-ch32l103_ob.bin
    ```
 
    - **Device already in the bootloader's DFU mode** (entered by holding BOOT while
@@ -168,6 +219,7 @@ This README is the engineering overview only; the reasoning lives in the notes:
 - Submodules, both under `third_party_components/`: `blackmagic`
   (`https://codeberg.org/mTOTm/blackmagic.git`, `dev/jiance.zhang/main_test`) and
   `CherryUSB` (`ch32v30x-usbhs`, containing the CH32V30x USBHS device controller
-  port).
-- The target driver list is trimmed in `bmp_port/CMakeLists.txt` to fit the 116 KB
-  application partition; add files there to support more chips.
+  port; the L103 uses CherryUSB's own `port/wch/usbfs`).
+- The target driver list is trimmed in `bmp_port/CMakeLists.txt` to fit the
+  application partition (116 KB on the V30x, 52 KB on the L103); add files there to
+  support more chips.

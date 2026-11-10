@@ -137,7 +137,7 @@ flags:
 
 ```
 /opt/Toolchain/RISC-V_Embedded_GCC12/bin/riscv-wch-elf-objdump -d \
-  build/ch32v30x_ob-release/CMakeFiles/bmp-ch32v30x-port.elf.dir/bmp_port/jtagtap.c.obj
+  build/ch32v30x_ob-release/CMakeFiles/bmp-ch32v30x_ob.elf.dir/bmp_port/jtagtap.c.obj
 ```
 
 Count the instructions between the store that clears TCK and the store that sets

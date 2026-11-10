@@ -1,15 +1,15 @@
-# bmp-ch32v30x-port
+# bmp-ch32xx-port
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Black Magic Probe（BMP）在 CH32V30x 上的端口工程，使用其高速 USB 设备控制器（USBHS）。
-固件作为 DFU bootloader 的**应用程序镜像**运行：bootloader 占前 12 KB，本应用从
-`0x08003000` 开始。
+Black Magic Probe（BMP）在 CH32xx 系列上的端口工程：**CH32V30x**（高速 USBHS）与
+**CH32L103**（全速 USBFS）。两者都作为 DFU bootloader 的**应用程序镜像**运行：
+bootloader 占前 12 KB，本应用从 `0x08003000` 开始。
 
 ```
 CMakeLists.txt            顶层：工具链、板级选择、链接、objcopy
 main.c                    应用入口
-CMakePresets.json         release / debug 预设
+CMakePresets.json         按板卡划分的 release / debug 预设
 bmp_port/                 端口层：USB、GPIO 位操作 SWD/JTAG、目标串口、定时、boot 握手、MCU glue
 bmp_port/CMakeLists.txt   端口源清单 + blackmagic 源清单与 include
 cmake/ch32fun_riscv.cmake 工具链（riscv-wch-elf-）
@@ -17,13 +17,33 @@ third_party_components/
   blackmagic/             子仓：BMP 核心与 target 驱动
   CherryUSB/              子仓：USB 协议栈 + CH32V30x USBHS 端口
   ch32fun/                子仓：启动、时钟树、中断向量表、寄存器头
-boards/ch32v30x_ob/      板级 BSP
-linkfile/flash_dfu.ld     应用链接脚本（0x00003000，116K）
+boards/ch32v30x_ob/       板级 BSP：CH32V30x，外部晶振，USBHS
+boards/ch32l103_ob/       板级 BSP：CH32L103，仅内部振荡器，USBFS
+linkfile/flash_dfu.ld           应用链接脚本，116K（V30x）
+linkfile/flash_dfu_ch32l103.ld  应用链接脚本，52K（L103）
 shared/boot_protocol.h    boot 与 app 的约定（分区、BKP 触发）
 docs/                     开发笔记（问题记录、设计笔记）
 ```
 
+## 板卡
+
+| 板卡 | MCU / 时钟 | USB 设备 | 应用区 |
+|---|---|---|---|
+| `ch32v30x_ob` | CH32V305/307，24 MHz 晶振，系统时钟 144 MHz | USBHS，高速 | `0x08003000` 起 116 KB |
+| `ch32l103_ob` | CH32L103K8U6（HPM5151 EVK 板载调试器），内部振荡器，系统时钟 96 MHz | USBFS，全速 | `0x08003000` 起 52 KB |
+
+芯片相关的部分由 `boards/<board>/board.cmake` 选择（`BOARD_CHIP` = `ch32v30x` /
+`ch32l103`、`BOARD_USB_HS`、链接脚本）；其上的复合 USB 描述符、目标串口数据通路、
+bootloader 握手都是共用的。
+
+L103 是 64 KB Flash / 20 KB RAM，52 KB 的应用区放不下完整的多架构探测镜像（约
+88 KB），因此该板必须用 `-DBMP_SLIM=ON`（只保留 RISC-V/HPM 目标，去掉
+ARM/ADIv5/SPI），即 `ch32l103_ob-slim-*` 预设。V30x 也有 `-slim-` 预设，需要更小的
+镜像时可用。
+
 ## 引脚
+
+`ch32v30x_ob`：
 
 | 功能 | 引脚 |
 |---|---|
@@ -36,19 +56,35 @@ docs/                     开发笔记（问题记录、设计笔记）
 | 目标串口 TX (USART3) | PB10 |
 | 目标串口 RX (USART3) | PB11 |
 
-nTRST / nSRST 未接线（空实现）。SWD/JTAG 引脚定义在 `bmp_port/jtag_port.h`；状态 LED 与
-BOOT 按键属于板级引脚（`boards/ch32v30x_ob/board_config.h` 里的 `BOARD_LED_*` /
-`BOARD_BOOT_*`），通过板级原语 `board_led_write()` / `board_read_boot_pin()` 访问。
+`ch32l103_ob`：
+
+| 功能 | 引脚 |
+|---|---|
+| SWCLK / TCK | PA6 |
+| SWDIO / TMS | PA7 |
+| TDI | PA5 |
+| TDO | PA4 |
+| 状态 LED（RGB 中的红灯，低有效） | PB8 |
+| BOOT 按键（接 GND，低有效） | PA0 |
+| 控制台串口 TX (USART1) | PA9 |
+| 控制台串口 RX (USART1) | PA10 |
+
+两块板的 nTRST / nSRST 都未接线（空实现）。SWD/JTAG 引脚定义在
+`bmp_port/jtag_port.h`；状态 LED 与 BOOT 按键属于板级引脚
+（`boards/<board>/board_config.h` 里的 `BOARD_LED_*` / `BOARD_BOOT_*`），通过板级
+原语 `board_led_write()` / `board_read_boot_pin()` 访问。
 
 SWD/JTAG 只做 **GPIO 位操作**（`bmp_port/jtag_port.h` 提供 `PIN_*` 宏），没有 SPI 加速
 路径，时序完全确定。
 
 ## USB 设备（复合设备，1a86:6018）
 
+两块板描述符一致，只是控制器不同（V30x 用 USBHS，L103 用 USBFS）。
+
 | 接口 | 功能 |
 |---|---|
 | 0 / 1 | GDB server（CDC ACM） |
-| 2 / 3 | 目标串口 UART（CDC ACM，USART3） |
+| 2 / 3 | 目标串口 UART（CDC ACM） |
 | 4 | DFU runtime（无端点） |
 
 - **DFU runtime（接口 4）用 Microsoft OS 1.0（WCID）描述符**：0xEE 字符串 +
@@ -70,15 +106,16 @@ SWD/JTAG 只做 **GPIO 位操作**（`bmp_port/jtag_port.h` 提供 `PIN_*` 宏�
 
 ## 目标串口（USB2UART）
 
-第二路 CDC（接口 2/3）对接 USART3（PB10/PB11）。串口**硬件由板级描述**而不是端口：实例、引脚
-和时钟是 `boards/ch32v30x_ob/board_config.h` 里的 `BOARD_APP_UART*` 宏，由
+第二路 CDC（接口 2/3）对接板级的应用串口：V30x 是 USART3（PB10/PB11），L103 是
+USART1（PA9/PA10）。串口**硬件由板级描述**而不是端口：实例、引脚和时钟是
+`boards/<board>/board_config.h` 里的 `BOARD_APP_UART*` 宏，由
 `board_init_app_uart()` 完成初始化；端口只负责线路格式和线上层。
 整条通路是 **DMA + 中断驱动**，不依赖主循环：
 
-- **target → host**：USART3 RX 由 DMA1 通道 3 循环写入 256 字节缓冲；串口**空闲中断**
+- **target → host**：UART RX 由 DMA 循环写入 256 字节缓冲；串口**空闲中断**
   与 DMA 半满/全满中断把已到达的数据经 USB sink 直接写进 IN 端点，端点完成回调
   （`aux_serial_usb_ready()`）接着搬剩下的部分。
-- **host → target**：USB OUT 回调把数据排入 1 KB 环形缓冲，DMA1 通道 2 一次发一段连续
+- **host → target**：USB OUT 回调把数据排入 1 KB 环形缓冲，DMA 一次发一段连续
   区域，传输完成中断接着发下一段。
 - **不做 DTR 门控**：只要求主机在读数据，兼容不置 DTR 的终端。
 - 由此 GDB 正在执行长命令时串口也不会停顿——旧实现是靠 `gdb_if_getchar()` 的空闲
@@ -86,24 +123,33 @@ SWD/JTAG 只做 **GPIO 位操作**（`bmp_port/jtag_port.h` 提供 `PIN_*` 宏�
 
 ## 与 bootloader 配合
 
-- 应用链接在 `0x00003000`（`linkfile/flash_dfu.ld`，116 KB），与
-  `shared/boot_protocol.h` 里的 `BOOT_APP_OFFSET` 一致。
-- 回到 bootloader 有三条路径，都走 `bmp_port/boot_trigger_ch32v30x.c` 的
+- 应用链接在 `0x00003000`（V30x 用 `linkfile/flash_dfu.ld`，116 KB；L103 用
+  `linkfile/flash_dfu_ch32l103.ld`，52 KB），与 `shared/boot_protocol.h` 里的
+  `BOOT_APP_OFFSET` 一致。
+- 回到 bootloader 有三条路径，都走 `bmp_port/boot_trigger_<chip>.c` 的
   BKP 握手（跨 `NVIC_SystemReset()` 保留）：
   - `dfu-util -e`（DFU_DETACH）→ `platform_request_boot()`
   - GDB 侧 `monitor bootloader`
-  - 按住 BOOT 按键（PA6）：探测端通过 `board_timer_create()`（`bmp_port/platform.c`）
-    注册 100 ms 周期回调，由板级的 TIM3 中断调用，因此在主循环阻塞于
+  - 按住 BOOT 按键：探测端通过 `board_timer_create()`（`bmp_port/platform.c`）
+    注册 100 ms 周期回调，由板级定时器中断调用，因此在主循环阻塞于
     `gdb_if_getchar()` 等 GDB 命令时依然有效
 
 ## 构建
 
 ```sh
+# CH32V30x（完整镜像）
 cmake --preset ch32v30x_ob-release
 cmake --build --preset ch32v30x_ob-release
+
+# CH32L103（slim 镜像，52 KB 分区必须）
+cmake --preset ch32l103_ob-slim-release
+cmake --build --preset ch32l103_ob-slim-release
 ```
 
-产物：`build/ch32v30x_ob-release/bmp-ch32v30x-port.{elf,hex,bin}`。
+产物按板卡命名，不同板卡不会混在一个名字下：
+
+- `build/ch32v30x_ob-release/bmp-ch32v30x_ob.{elf,hex,bin}`
+- `build/ch32l103_ob-slim-release/bmp-ch32l103_ob.{elf,hex,bin}`
 
 ## 烧录 / 使用
 
@@ -112,7 +158,10 @@ cmake --build --preset ch32v30x_ob-release
    状态下都可用**，不需要先判断设备当前跑的是哪一份固件：
 
    ```sh
-   dfu-util -d 1a86 -s 0x08003000:leave -D build/ch32v30x_ob-release/bmp-ch32v30x-port.bin
+   # CH32V30x
+   dfu-util -d 1a86 -s 0x08003000:leave -D build/ch32v30x_ob-release/bmp-ch32v30x_ob.bin
+   # CH32L103
+   dfu-util -d 1a86 -s 0x08003000:leave -D build/ch32l103_ob-slim-release/bmp-ch32l103_ob.bin
    ```
 
    - **设备已经在 bootloader 的 DFU 模式**（按住 BOOT 上电进入）→ 直接下载。
@@ -146,6 +195,7 @@ cmake --build --preset ch32v30x_ob-release
 
 - 子仓（都在 `third_party_components/` 下）：`blackmagic`
   （`https://codeberg.org/mTOTm/blackmagic.git`，`dev/jiance.zhang/main_test`）与
-  `CherryUSB`（`ch32v30x-usbhs`，含 CH32V30x USBHS 设备控制器端口）。
-- target 驱动清单在 `bmp_port/CMakeLists.txt` 里按需裁剪（应用分区 116 KB），
-  需要更多芯片支持时往里加文件即可。
+  `CherryUSB`（`ch32v30x-usbhs`，含 CH32V30x USBHS 设备控制器端口；L103 用 CherryUSB
+  自带的 `port/wch/usbfs`）。
+- target 驱动清单在 `bmp_port/CMakeLists.txt` 里按需裁剪（应用分区 V30x 116 KB、
+  L103 52 KB），需要更多芯片支持时往里加文件即可。

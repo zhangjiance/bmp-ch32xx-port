@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 # ==============================================================================
-# bmp-ch32v30x-port - Black Magic Probe port for CH32V30x
+# bmp-ch32xx-port - Black Magic Probe port for CH32V30x / CH32L103
 #
 # Application image for the DFU bootloader:
 #   * links at 0x00008000, the application partition (32 KB bootloader)
@@ -37,7 +37,7 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()
 
-set(CMAKE_PROJECT_NAME bmp-ch32v30x-port)
+set(CMAKE_PROJECT_NAME bmp-ch32xx-port)
 
 # CherryUSB device stack: two CDC ACM functions (GDB + target UART).
 set(CONFIG_CHERRYUSB_DEVICE 1)
@@ -116,6 +116,11 @@ endif()
 
 message(STATUS "Board: ${BOARD}")
 
+# Artefacts are named after the board, not the (board agnostic) project:
+#   build/ch32v30x_ob-release/bmp-ch32v30x_ob.{elf,hex,bin}
+#   build/ch32l103_ob-slim-release/bmp-ch32l103_ob.{elf,hex,bin}
+set(BMP_IMAGE_NAME "bmp-${BOARD}")
+
 # ------------------------------------------------------------------------------
 # Build flavour
 #
@@ -143,7 +148,7 @@ enable_language(C ASM)
 
 project(${CMAKE_PROJECT_NAME})
 
-set(PROJECT_TARGET ${CMAKE_PROJECT_NAME}.elf)
+set(PROJECT_TARGET ${BMP_IMAGE_NAME}.elf)
 # ch32fun's vector table lives in .init and the entry point is InterruptVector,
 # so this script has no .vector output section.
 # The board may point at its own script (a 64 KB part needs a smaller
@@ -155,7 +160,7 @@ set(LINKER_SCRIPT ${BOARD_LINKER_SCRIPT})
 
 add_link_options(
     -T ${LINKER_SCRIPT}
-    -Wl,-Map,${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_PROJECT_NAME}.map
+    -Wl,-Map,${CMAKE_CURRENT_BINARY_DIR}/${BMP_IMAGE_NAME}.map
 )
 
 add_executable(${PROJECT_TARGET} main.c)
@@ -166,6 +171,6 @@ add_executable(${PROJECT_TARGET} main.c)
 add_subdirectory(bmp_port)
 
 add_custom_command(TARGET ${PROJECT_TARGET} POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} -Oihex $<TARGET_FILE:${CMAKE_PROJECT_NAME}.elf> ${CMAKE_PROJECT_NAME}.hex
-    COMMAND ${CMAKE_OBJCOPY} -Obinary $<TARGET_FILE:${CMAKE_PROJECT_NAME}.elf> ${CMAKE_PROJECT_NAME}.bin
+    COMMAND ${CMAKE_OBJCOPY} -Oihex $<TARGET_FILE:${PROJECT_TARGET}> ${BMP_IMAGE_NAME}.hex
+    COMMAND ${CMAKE_OBJCOPY} -Obinary $<TARGET_FILE:${PROJECT_TARGET}> ${BMP_IMAGE_NAME}.bin
 )
