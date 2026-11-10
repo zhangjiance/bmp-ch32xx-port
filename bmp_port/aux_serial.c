@@ -44,11 +44,21 @@
 #define AUX_UART_IRQn    BOARD_APP_UART_IRQ
 
 /*
- * APB1 runs at HCLK / 2 on this port (ch32fun's clock tree), so the USART
- * divisor is derived from that.  If the APB1 prescaler ever changes, update
- * this along with FUNCONF_SYSTEM_CORE_CLOCK usage in funconfig.h.
+ * The UART's peripheral clock follows the bus it sits on.  ch32fun's clock tree
+ * programs RCC->CFGR0 = HPRE/1 | PPRE2/1 | PPRE1/2, so APB2 runs at HCLK and
+ * APB1 at HCLK / 2:
+ *
+ *   CH32L103  USART1 -> APB2 = HCLK
+ *   CH32V30x  USART3 -> APB1 = HCLK / 2
+ *
+ * Update this if a board moves the UART to another bus or the prescalers change;
+ * a wrong value shows up as a baud rate that is off by the ratio.
  */
-#define AUX_PCLK1 (FUNCONF_SYSTEM_CORE_CLOCK / 2U)
+#if defined(CH32L103) && CH32L103
+#define AUX_PCLK (FUNCONF_SYSTEM_CORE_CLOCK)
+#else
+#define AUX_PCLK (FUNCONF_SYSTEM_CORE_CLOCK / 2U)
+#endif
 
 /*
  * DMA1 request mapping and the USART interrupt name follow the chip (the same
@@ -297,11 +307,12 @@ static void uart_apply_encoding(void)
     AUX_UART->CTLR2 = (line_coding.stop_bits == 2U) ? 0x2000U : 0x0000U;
 
     /*
-     * BRR: the WCH divisor, 16x oversampling, PCLK1 as the source:
-     *   usartdiv = 25 * PCLK1 / (4 * baud)  (in hundredths of a bit period)
+     * BRR: the WCH divisor, 16x oversampling, the UART's bus clock as the
+     * source:
+     *   usartdiv = 25 * PCLK / (4 * baud)  (in hundredths of a bit period)
      *   BRR = mantissa << 4 | round(fraction * 16)
      */
-    const uint32_t usartdiv = (25U * AUX_PCLK1) / (4U * line_coding.baudrate);
+    const uint32_t usartdiv = (25U * AUX_PCLK) / (4U * line_coding.baudrate);
     uint32_t brr = (usartdiv / 100U) << 4;
     uint32_t fraction = usartdiv - (100U * (brr >> 4));
     fraction = ((fraction * 16U) + 50U) / 100U;

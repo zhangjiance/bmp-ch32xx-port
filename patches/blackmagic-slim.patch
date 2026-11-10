@@ -1,5 +1,5 @@
 diff --git a/src/command.c b/src/command.c
-index 2bace3db..fb011f82 100644
+index 6e57a66e..fb011f82 100644
 --- a/src/command.c
 +++ b/src/command.c
 @@ -72,11 +72,9 @@ static bool cmd_version(target_s *target, int argc, const char **argv);
@@ -27,7 +27,7 @@ index 2bace3db..fb011f82 100644
  	{"auto_scan", cmd_auto_scan, "Automatically scan all chain types for devices"},
  	{"frequency", cmd_frequency, "Set minimum high and low times: [FREQ]"},
  	{"targets", cmd_targets, "Display list of available targets"},
-@@ -300,89 +295,6 @@ static bool cmd_jtag_scan(target_s *target, int argc, const char **argv)
+@@ -300,91 +295,6 @@ static bool cmd_jtag_scan(target_s *target, int argc, const char **argv)
  	return true;
  }
  
@@ -43,23 +43,25 @@ index 2bace3db..fb011f82 100644
 -		platform_nrst_set_val(true); /* will be deasserted after attach */
 -
 -	bool scan_result = false;
--	TRY (EXCEPTION_ALL) {
+-	do {
+-		TRY (EXCEPTION_ALL) {
 -#if CONFIG_BMDA == 1
--		scan_result = bmda_swd_scan_targetid(targetid);
+-			scan_result = bmda_swd_scan_targetid(targetid);
 -#else
--		scan_result = adiv5_swd_scan_targetid(targetid);
+-			scan_result = adiv5_swd_scan_targetid(targetid);
 -#endif
--	}
--	CATCH () {
--	case EXCEPTION_TIMEOUT:
--		gdb_outf("Timeout during scan. Is target stuck in WFI?\n");
--		break;
--	case EXCEPTION_ERROR:
--		gdb_outf("Exception: %s\n", exception_frame.msg);
--		break;
--	default:
--		break;
--	}
+-		}
+-		CATCH () {
+-		case EXCEPTION_TIMEOUT:
+-			gdb_outf("Timeout during scan. Is target stuck in WFI?\n");
+-			break;
+-		case EXCEPTION_ERROR:
+-			gdb_outf("Exception: %s\n", exception_frame.msg);
+-			break;
+-		default:
+-			break;
+-		}
+-	} while (0);
 -
 -#if defined(CONFIG_RVSWD) && defined(PLATFORM_HAS_RVSWD) && defined(CONFIG_RISCV)
 -	if (!scan_result) {
@@ -117,7 +119,7 @@ index 2bace3db..fb011f82 100644
  #if defined(CONFIG_RVSWD) && defined(PLATFORM_HAS_RVSWD) && defined(CONFIG_RISCV)
  bool cmd_rvswd_scan(target_s *target, int argc, const char **argv)
  {
-@@ -445,7 +357,6 @@ bool cmd_auto_scan(target_s *target, int argc, const char **argv)
+@@ -447,7 +357,6 @@ bool cmd_auto_scan(target_s *target, int argc, const char **argv)
  		/* clang-format off */
  	{
  		{bmda_jtag_scan, "JTAG"},
@@ -125,7 +127,7 @@ index 2bace3db..fb011f82 100644
  #if defined(CONFIG_RVSWD) && defined(PLATFORM_HAS_RVSWD) && defined(CONFIG_RISCV)
  		{bmda_rvswd_scan, "RVSWD"},
  #endif
-@@ -453,7 +364,6 @@ bool cmd_auto_scan(target_s *target, int argc, const char **argv)
+@@ -455,7 +364,6 @@ bool cmd_auto_scan(target_s *target, int argc, const char **argv)
  #else
  	{
  		{jtag_scan, "JTAG"},
