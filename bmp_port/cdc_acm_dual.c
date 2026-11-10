@@ -52,7 +52,14 @@
 #define AUX_DATA_INTF 3
 #define DFU_INTF      4
 
-#define USB_XFER_SIZE 512U /* bulk max packet size at high speed */
+#ifdef USB_HS
+#define USB_XFER_SIZE 512U      /* bulk max packet size, high speed (USBHS) */
+#else
+/* Full speed (the CH32L103's USBFS): 64 is the bulk maximum, and every reply is
+ * cut into chunks of this size by the send path below, which also appends the
+ * terminating zero-length packet when the length is an exact multiple. */
+#define USB_XFER_SIZE 64U
+#endif
 
 #define GDB_CDC_DESC_LEN CDC_ACM_DESCRIPTOR_LEN
 #define AUX_CDC_DESC_LEN CDC_ACM_DESCRIPTOR_LEN
